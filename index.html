@@ -12,6 +12,7 @@
     .section { border-top: 1px solid var(--border); padding-top: 16px; margin-top: 16px; }
     .section-title { font-weight: 600; font-size: 0.95rem; margin-bottom: 10px; color: #334155; }
     label { display: block; font-size: 0.85rem; font-weight: 500; margin-bottom: 4px; color: #475569; }
+    .optional { font-size: 0.8rem; color: #94a3b8; font-weight: normal; }
     input, select, textarea { width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 6px; box-sizing: border-box; font-size: 0.95rem; margin-bottom: 10px; }
     .row { display: flex; gap: 8px; }
     .row input { flex: 1; }
@@ -61,12 +62,6 @@
           <input type="text" id="preacher" placeholder="예: 배정귀">
         </div>
       </div>
-
-      <!-- 주일예배 선택 시에만 표시되는 교독문 입력창 -->
-      <div id="reading-section" style="display:none; background:#f0fdf4; border:1px solid #bbf7d0; padding:10px; border-radius:6px; margin-top:6px;">
-        <label style="color:#166534;">📖 주일 교독문 번호</label>
-        <input type="number" id="reading-num" placeholder="예: 28 (시편 63편)" style="margin-bottom:0;">
-      </div>
     </div>
 
     <div class="section">
@@ -87,12 +82,20 @@
       <button type="button" class="btn-add" onclick="addRow('hymn-list', '찬송가 장수 입력')">➕ 찬송가 추가</button>
     </div>
 
+    <!-- 주일예배 선택 시 찬송가 목록 바로 다음에 표시되는 교독문 섹션 -->
+    <div id="reading-section" class="section" style="display:none; background:#f0fdf4; border:1px solid #bbf7d0; padding:16px; border-radius:8px;">
+      <div class="section-title" style="color:#166534; margin-bottom:6px;">📖 주일 교독문</div>
+      <label style="color:#166534;">교독문 번호</label>
+      <input type="number" id="reading-num" placeholder="예: 28 (시편 63편)" style="margin-bottom:0;">
+    </div>
+
     <div class="section">
       <div class="section-title">4. 성경 본문 및 설교</div>
       <label>성경 본문</label>
       <input type="text" id="scripture" placeholder="예: 고린도전서 12장 27절~31절">
-      <label>설교 제목</label>
-      <input type="text" id="sermon-title" placeholder="예: 그리스도의 몸과 지체">
+      
+      <label>설교 제목 <span class="optional">(선택 사항)</span></label>
+      <input type="text" id="sermon-title" placeholder="입력하지 않으면 템플릿 기본 형식을 유지합니다">
     </div>
 
     <button type="button" class="btn-submit" onclick="submitOrder()">🚀 예배 PPT 생성 요청하기</button>
@@ -119,7 +122,7 @@
       document.getElementById('main-app').style.display = 'block';
     }
 
-    // 주일예배 선택 시 교독문 표시 전환
+    // 주일예배 선택 시 찬송가 뒤에 교독문 표시 전환
     function toggleResponsiveReading() {
       const type = document.getElementById('worship-type').value;
       const readingBox = document.getElementById('reading-section');
@@ -137,7 +140,7 @@
       btn.parentElement.remove();
     }
 
-    // 데이터 전송 준비 (2단계에서 API 연결 예정)
+    // 데이터 전송 준비 (3단계에서 API 연결 예정)
     function submitOrder() {
       const praiseNums = Array.from(document.querySelectorAll('.praise-item')).map(i => i.value.trim()).filter(Boolean);
       const hymnNums = Array.from(document.querySelectorAll('.hymn-item')).map(i => i.value.trim()).filter(Boolean);
@@ -146,15 +149,15 @@
         worship_type: document.getElementById('worship-type').value,
         date: document.getElementById('worship-date').value,
         preacher: document.getElementById('preacher').value,
-        reading_num: document.getElementById('reading-num').value,
+        reading_num: document.getElementById('reading-num').value || "",
         praises: praiseNums,
         hymns: hymnNums,
         scripture: document.getElementById('scripture').value,
-        title: document.getElementById('sermon-title').value
+        title: document.getElementById('sermon-title').value.trim()
       };
 
       console.log("전송할 예배 순서 데이터:", payload);
-      document.getElementById('status-msg').innerText = "⏳ 2단계에서 백엔드와 연결됩니다. 콘솔창에 데이터가 수집되었습니다.";
+      document.getElementById('status-msg').innerText = "⏳ 백엔드와 연결 준비가 완료되었습니다.";
       document.getElementById('status-msg').style.color = "#2563eb";
     }
   </script>
