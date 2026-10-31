@@ -62,7 +62,12 @@ def upload_final_ppt(service, folder_id, filename, file_stream):
         resumable=True
     )
     meta = {'name': filename, 'parents': [folder_id]}
-    file_obj = service.files().create(body=meta, media_body=media, fields='id, webViewLink').execute()
+    file_obj = service.files().create(
+        body=meta,
+        media_body=media,
+        fields='id, webViewLink',
+        supportsAllDrives=True
+    ).execute()
     return file_obj.get('webViewLink')
 
 # 3. 구버전 (.ppt -> .pptx) 자동 변환 함수
