@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>예배 PPT 자동 생성기</title>
+  <style>
+    :root { --primary: #2563eb; --bg: #f8fafc; --card: #ffffff; --border: #e2e8f0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg); margin: 0; padding: 20px; color: #1e293b; }
+    .container { max-width: 560px; margin: 0 auto; background: var(--card); border-radius: 12px; padding: 24px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); }
+    h2 { margin-top: 0; font-size: 1.4rem; text-align: center; color: #0f172a; }
+    .section { border-top: 1px solid var(--border); padding-top: 16px; margin-top: 16px; }
+    .section-title { font-weight: 600; font-size: 0.95rem; margin-bottom: 10px; color: #334155; }
+    label { display: block; font-size: 0.85rem; font-weight: 500; margin-bottom: 4px; color: #475569; }
+    input, select, textarea { width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 6px; box-sizing: border-box; font-size: 0.95rem; margin-bottom: 10px; }
+    .row { display: flex; gap: 8px; }
+    .row input { flex: 1; }
+    .btn-del { width: 60px; background: #fee2e2; color: #dc2626; border: none; border-radius: 6px; cursor: pointer; height: 42px; font-weight: 600; }
+    .btn-add { width: 100%; background: #f1f5f9; color: #334155; border: 1px dashed #cbd5e1; padding: 8px; border-radius: 6px; cursor: pointer; font-weight: 500; margin-top: 4px; }
+    .btn-add:hover { background: #e2e8f0; }
+    .btn-submit { width: 100%; background: var(--primary); color: white; border: none; padding: 14px; border-radius: 8px; font-size: 1rem; font-weight: 600; cursor: pointer; margin-top: 20px; }
+    .btn-submit:hover { background: #1d4ed8; }
+    /* 비밀번호 모달 */
+    #auth-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(15,23,42,0.85); display: flex; align-items: center; justify-content: center; z-index: 999; }
+    .auth-box { background: white; padding: 28px; border-radius: 12px; width: 300px; text-align: center; }
+  </style>
+</head>
+<body>
+
+  <!-- 1. 보안 비밀번호 게이트 (1907) -->
+  <div id="auth-overlay">
+    <div class="auth-box">
+      <h3 style="margin-top:0;">🔒 예배사역 인증</h3>
+      <p style="font-size:0.85rem; color:#64748b;">접속 비밀번호를 입력해주세요.</p>
+      <input type="password" id="pw-input" placeholder="비밀번호 4자리" maxlength="10">
+      <button class="btn-submit" style="margin-top:8px;" onclick="checkPassword()">입장하기</button>
+      <p id="pw-error" style="color:red; font-size:0.8rem; display:none; margin-top:8px;">비밀번호가 일치하지 않습니다.</p>
+    </div>
+  </div>
+
+  <!-- 2. 메인 입력 폼 -->
+  <div class="container" id="main-app" style="display:none;">
+    <h2>⛪ 예배 PPT 자동 생성기</h2>
+
+    <div class="section">
+      <div class="section-title">1. 기본 예배 정보</div>
+      <label>예배 구분</label>
+      <select id="worship-type" onchange="toggleResponsiveReading()">
+        <option value="금요예배">금요예배</option>
+        <option value="수요예배">수요예배</option>
+        <option value="주일예배">주일예배</option>
+      </select>
+      
+      <div class="row">
+        <div style="flex:1;">
+          <label>예배 일자</label>
+          <input type="date" id="worship-date">
+        </div>
+        <div style="flex:1;">
+          <label>설교자명</label>
+          <input type="text" id="preacher" placeholder="예: 배정귀">
+        </div>
+      </div>
+
+      <!-- 주일예배 선택 시에만 표시되는 교독문 입력창 -->
+      <div id="reading-section" style="display:none; background:#f0fdf4; border:1px solid #bbf7d0; padding:10px; border-radius:6px; margin-top:6px;">
+        <label style="color:#166534;">📖 주일 교독문 번호</label>
+        <input type="number" id="reading-num" placeholder="예: 28 (시편 63편)" style="margin-bottom:0;">
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">2. 찬양 목록 (새찬양집 번호)</div>
+      <div id="praise-list">
+        <div class="row"><input type="number" class="praise-item" placeholder="곡 번호 (예: 335)"><button type="button" class="btn-del" onclick="removeRow(this)">삭제</button></div>
+        <div class="row"><input type="number" class="praise-item" placeholder="곡 번호 (예: 233)"><button type="button" class="btn-del" onclick="removeRow(this)">삭제</button></div>
+      </div>
+      <button type="button" class="btn-add" onclick="addRow('praise-list', '곡 번호 입력')">➕ 찬양 추가</button>
+    </div>
+
+    <div class="section">
+      <div class="section-title">3. 찬송가 목록 (새찬송가 장수)</div>
+      <div id="hymn-list">
+        <div class="row"><input type="number" class="hymn-item" placeholder="찬송가 장수 (예: 338)"><button type="button" class="btn-del" onclick="removeRow(this)">삭제</button></div>
+        <div class="row"><input type="number" class="hymn-item" placeholder="찬송가 장수 (예: 438)"><button type="button" class="btn-del" onclick="removeRow(this)">삭제</button></div>
+      </div>
+      <button type="button" class="btn-add" onclick="addRow('hymn-list', '찬송가 장수 입력')">➕ 찬송가 추가</button>
+    </div>
+
+    <div class="section">
+      <div class="section-title">4. 성경 본문 및 설교</div>
+      <label>성경 본문</label>
+      <input type="text" id="scripture" placeholder="예: 고린도전서 12장 27절~31절">
+      <label>설교 제목</label>
+      <input type="text" id="sermon-title" placeholder="예: 그리스도의 몸과 지체">
+    </div>
+
+    <button type="button" class="btn-submit" onclick="submitOrder()">🚀 예배 PPT 생성 요청하기</button>
+    <div id="status-msg" style="margin-top:12px; text-align:center; font-size:0.9rem; font-weight:600;"></div>
+  </div>
+
+  <script>
+    // 오늘 날짜 자동 지정
+    document.getElementById('worship-date').valueAsDate = new Date();
+
+    // 1907 비밀번호 인증
+    function checkPassword() {
+      const pw = document.getElementById('pw-input').value;
+      if (pw === '1907') {
+        sessionStorage.setItem('worship_auth', 'true');
+        document.getElementById('auth-overlay').style.display = 'none';
+        document.getElementById('main-app').style.display = 'block';
+      } else {
+        document.getElementById('pw-error').style.display = 'block';
+      }
+    }
+    if (sessionStorage.getItem('worship_auth') === 'true') {
+      document.getElementById('auth-overlay').style.display = 'none';
+      document.getElementById('main-app').style.display = 'block';
+    }
+
+    // 주일예배 선택 시 교독문 표시 전환
+    function toggleResponsiveReading() {
+      const type = document.getElementById('worship-type').value;
+      const readingBox = document.getElementById('reading-section');
+      readingBox.style.display = (type === '주일예배') ? 'block' : 'none';
+    }
+
+    // 동적 행 추가 / 삭제
+    function addRow(containerId, placeholderText) {
+      const div = document.createElement('div');
+      div.className = 'row';
+      div.innerHTML = `<input type="number" class="${containerId === 'praise-list' ? 'praise-item' : 'hymn-item'}" placeholder="${placeholderText}"><button type="button" class="btn-del" onclick="removeRow(this)">삭제</button>`;
+      document.getElementById(containerId).appendChild(div);
+    }
+    function removeRow(btn) {
+      btn.parentElement.remove();
+    }
+
+    // 데이터 전송 준비 (2단계에서 API 연결 예정)
+    function submitOrder() {
+      const praiseNums = Array.from(document.querySelectorAll('.praise-item')).map(i => i.value.trim()).filter(Boolean);
+      const hymnNums = Array.from(document.querySelectorAll('.hymn-item')).map(i => i.value.trim()).filter(Boolean);
+      
+      const payload = {
+        worship_type: document.getElementById('worship-type').value,
+        date: document.getElementById('worship-date').value,
+        preacher: document.getElementById('preacher').value,
+        reading_num: document.getElementById('reading-num').value,
+        praises: praiseNums,
+        hymns: hymnNums,
+        scripture: document.getElementById('scripture').value,
+        title: document.getElementById('sermon-title').value
+      };
+
+      console.log("전송할 예배 순서 데이터:", payload);
+      document.getElementById('status-msg').innerText = "⏳ 2단계에서 백엔드와 연결됩니다. 콘솔창에 데이터가 수집되었습니다.";
+      document.getElementById('status-msg').style.color = "#2563eb";
+    }
+  </script>
+</body>
+</html>
