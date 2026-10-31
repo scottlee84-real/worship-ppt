@@ -60,11 +60,13 @@ def download_file_stream(service, file_id):
     fh.seek(0)
     return fh
 
-def upload_final_ppt(service, folder_id, filename, file_stream):
+def upload_final_ppt(service, folder_id, filename, file_bytes):
+    # Broken Pipe 방지를 위해 단일 스트림(resumable=False) 사용
+    upload_stream = io.BytesIO(file_bytes)
     media = MediaIoBaseUpload(
-        file_stream,
+        upload_stream,
         mimetype='application/vnd.openxmlformats-officedocument.presentationml.presentation',
-        resumable=True
+        resumable=False
     )
     meta = {'name': filename, 'parents': [folder_id]}
     file_obj = service.files().create(
@@ -126,7 +128,7 @@ def append_presentation(target_prs, source_stream):
 
 # 5. 메인 입력 UI
 st.title("⛪ 예배 PPT 자동 생성기")
-st.caption("구버전(.ppt)과 최신(.pptx) 찬양 파일 모두 자동으로 변환하여 병합합니다.")
+st.caption("찬양과 본문 정보를 입력하면 템플릿 서식을 유지하며 완성본을 만듭니다.")
 
 if "praises" not in st.session_state:
     st.session_state.praises = ["", ""]
@@ -268,28 +270,26 @@ if st.button("🚀 예배 PPT 생성 및 드라이브 저장", type="primary", u
                     else:
                         st.warning(f"⚠️ 찬송가 {h_val}장 파일을 찾지 못해 건너뜁니다.")
 
-            # 5. 완성본 메모리 저장
+            # 5. 완성본 메모리 저장 (바이트 데이터 추출)
             out_stream = io.BytesIO()
             target_prs.save(out_stream)
-            out_stream.seek(0)
+            final_pptx_bytes = out_stream.getvalue()
 
-            # 6. 구글 드라이브 업로드 시도 (할당량 제한 대비 안전 분기)
+            # 6. 구글 드라이브 업로드 시도 (할당량 거부 시에도 다운로드는 보장)
             drive_link = None
             try:
-                drive_link = upload_final_ppt(drive, f_output, output_filename, out_stream)
+                drive_link = upload_final_ppt(drive, f_output, output_filename, final_pptx_bytes)
             except Exception as up_err:
-                st.warning(f"⚠️ 구글 드라이브 업로드 제한: {str(up_err)}")
-                st.info("💡 드라이브 저장 권한과 무관하게 아래 버튼을 통해 완성된 PPT를 즉시 다운로드하실 수 있습니다.")
+                st.warning(f"⚠️ 구글 드라이브 업로드 제한(스토리지 할당량): 개인 계정 보안 정책으로 인해 드라이브 자동 등록은 건너뜁니다.")
 
-            st.success(f"🎉 '{output_filename}' 병합이 완료되었습니다!")
+            st.success(f"🎉 '{output_filename}' 생성이 완료되었습니다!")
             if drive_link:
                 st.markdown(f"👉 [**구글 드라이브 완성본 폴더에서 열기**]({drive_link})")
 
-            # 내 PC 즉시 다운로드 버튼
-            out_stream.seek(0)
+            # 내 PC 즉시 다운로드 버튼 (언제나 보장)
             st.download_button(
                 label="📥 내 PC로 바로 다운로드",
-                data=out_stream,
+                data=final_pptx_bytes,
                 file_name=output_filename,
                 mime="application/vnd.openxmlformats-officedocument.presentationml.presentation",
                 use_container_width=True
