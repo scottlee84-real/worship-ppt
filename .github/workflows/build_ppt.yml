@@ -1,0 +1,40 @@
+name: Build Worship PPT
+
+on:
+  repository_dispatch:
+    types: [build-worship-ppt]
+  workflow_dispatch:
+    inputs:
+      order_json:
+        description: '예배 순서 JSON 데이터'
+        required: true
+        default: '{}'
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 저장소 체크아웃
+        uses: actions/checkout@v4
+
+      - name: 파이썬 환경 설정
+        uses: setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: 필수 라이브러리 설치
+        run: |
+          pip install python-pptx google-api-python-client google-auth
+
+      - name: PPT 병합 및 구글 드라이브 업로드
+        env:
+          GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
+          DRIVE_FOLDER_TEMPLATES: ${{ secrets.DRIVE_FOLDER_TEMPLATES }}
+          DRIVE_FOLDER_HYMNS: ${{ secrets.DRIVE_FOLDER_HYMNS }}
+          DRIVE_FOLDER_PRAISES: ${{ secrets.DRIVE_FOLDER_PRAISES }}
+          DRIVE_FOLDER_OUTPUT: ${{ secrets.DRIVE_FOLDER_OUTPUT }}
+          CLIENT_PAYLOAD: ${{ toJson(github.event.client_payload) }}
+          INPUT_PAYLOAD: ${{ github.event.inputs.order_json }}
+        run: |
+          python generate_ppt.py
