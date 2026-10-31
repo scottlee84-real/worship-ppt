@@ -41,12 +41,17 @@ def get_drive_service():
 
 def search_drive_file(service, folder_id, query_condition):
     q = f"'{folder_id}' in parents and {query_condition} and trashed = false"
-    res = service.files().list(q=q, fields="files(id, name)").execute()
+    res = service.files().list(
+        q=q,
+        fields="files(id, name)",
+        supportsAllDrives=True,
+        includeItemsFromAllDrives=True
+    ).execute()
     files = res.get('files', [])
     return files[0] if files else None
 
 def download_file_stream(service, file_id):
-    req = service.files().get_media(fileId=file_id)
+    req = service.files().get_media(fileId=file_id, supportsAllDrives=True)
     fh = io.BytesIO()
     downloader = MediaIoBaseDownload(fh, req)
     done = False
@@ -77,7 +82,6 @@ def convert_ppt_to_pptx_stream(ppt_stream):
         with open(input_ppt_path, "wb") as f:
             f.write(ppt_stream.getbuffer())
 
-        # LibreOffice를 이용한 무인 포맷 변환
         cmd = [
             "libreoffice",
             "--headless",
@@ -224,7 +228,7 @@ if st.button("🚀 예배 PPT 생성 및 드라이브 저장", type="primary", u
                     if reading_num:
                         replace_shape_text(shape, "{교독문}", f"교독문 {reading_num}번")
 
-            # 3. 찬양 파일 탐색 및 병합 (.ppt / .pptx 자동 분기)
+            # 3. 찬양 파일 탐색 및 병합
             for p_val in st.session_state.praises:
                 if p_val.strip().isdigit():
                     prefix = f"{int(p_val.strip()):03d}. "
@@ -234,7 +238,6 @@ if st.button("🚀 예배 PPT 생성 및 드라이브 저장", type="primary", u
                         st.write(f"✓ 찬양 파일 로드: `{p_meta['name']}`")
                         p_stream = download_file_stream(drive, p_meta['id'])
                         
-                        # 구버전 .ppt 파일인 경우 실시간 자동 변환 수행
                         if p_meta['name'].endswith('.ppt'):
                             st.caption(f"↳ 구버전 형식 감지: `{p_meta['name']}` 자동 변환 중...")
                             p_stream = convert_ppt_to_pptx_stream(p_stream)
@@ -243,7 +246,7 @@ if st.button("🚀 예배 PPT 생성 및 드라이브 저장", type="primary", u
                     else:
                         st.warning(f"⚠️ 찬양 {p_val}번 파일을 찾지 못해 건너뜁니다.")
 
-            # 4. 찬송가 파일 탐색 및 병합 (.ppt / .pptx 자동 분기)
+            # 4. 찬송가 파일 탐색 및 병합
             for h_val in st.session_state.hymns:
                 if h_val.strip().isdigit():
                     exact_name_pptx = f"{int(h_val.strip()):03d}장.pptx"
@@ -265,17 +268,24 @@ if st.button("🚀 예배 PPT 생성 및 드라이브 저장", type="primary", u
                     else:
                         st.warning(f"⚠️ 찬송가 {h_val}장 파일을 찾지 못해 건너뜁니다.")
 
-            # 5. 완성본 메모리 저장 및 드라이브 업로드
+            # 5. 완성본 메모리 저장
             out_stream = io.BytesIO()
             target_prs.save(out_stream)
             out_stream.seek(0)
 
-            drive_link = upload_final_ppt(drive, f_output, output_filename, out_stream)
+            # 6. 구글 드라이브 업로드 시도 (할당량 제한 대비 안전 분기)
+            drive_link = None
+            try:
+                drive_link = upload_final_ppt(drive, f_output, output_filename, out_stream)
+            except Exception as up_err:
+                st.warning(f"⚠️ 구글 드라이브 업로드 제한: {str(up_err)}")
+                st.info("💡 드라이브 저장 권한과 무관하게 아래 버튼을 통해 완성된 PPT를 즉시 다운로드하실 수 있습니다.")
 
-            st.success(f"🎉 '{output_filename}' 생성이 완료되었습니다!")
+            st.success(f"🎉 '{output_filename}' 병합이 완료되었습니다!")
             if drive_link:
                 st.markdown(f"👉 [**구글 드라이브 완성본 폴더에서 열기**]({drive_link})")
 
+            # 내 PC 즉시 다운로드 버튼
             out_stream.seek(0)
             st.download_button(
                 label="📥 내 PC로 바로 다운로드",
