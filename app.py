@@ -29,13 +29,16 @@ if not st.session_state.authenticated:
     st.stop()
 
 # -----------------------------------------------------------------------------
-# 2. Google Drive 연동 함수
+# 2. Google Drive 연동 함수 (줄바꿈 자동 보정 반영)
 # -----------------------------------------------------------------------------
 SCOPES = ['https://www.googleapis.com/auth/drive']
 
 @st.cache_resource
 def get_drive_service():
     sa_info = dict(st.secrets["gcp_service_account"])
+    # private_key 내부의 문자열 이스케이프(\n) 및 줄바꿈 깨짐 자동 보정
+    if "private_key" in sa_info:
+        sa_info["private_key"] = sa_info["private_key"].replace("\\n", "\n")
     creds = service_account.Credentials.from_service_account_info(sa_info, scopes=SCOPES)
     return build('drive', 'v3', credentials=creds)
 
