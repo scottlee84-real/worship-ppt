@@ -1,6 +1,9 @@
 import io
+import os
 import json
 import copy
+import subprocess
+import tempfile
 from datetime import datetime
 import streamlit as st
 from pptx import Presentation
@@ -26,7 +29,7 @@ if not st.session_state.authenticated:
             st.error("비밀번호가 일치하지 않습니다.")
     st.stop()
 
-# 2. Google Drive 연동 함수 (JSON 원문 파싱)
+# 2. Google Drive 연동 함수
 SCOPES = ['https://www.googleapis.com/auth/drive']
 
 @st.cache_resource
@@ -62,7 +65,35 @@ def upload_final_ppt(service, folder_id, filename, file_stream):
     file_obj = service.files().create(body=meta, media_body=media, fields='id, webViewLink').execute()
     return file_obj.get('webViewLink')
 
-# 3. PPTX 병합 및 서식 유지 텍스트 치환
+# 3. 구버전 (.ppt -> .pptx) 자동 변환 함수
+def convert_ppt_to_pptx_stream(ppt_stream):
+    with tempfile.TemporaryDirectory() as tmpdir:
+        input_ppt_path = os.path.join(tmpdir, "temp_source.ppt")
+        with open(input_ppt_path, "wb") as f:
+            f.write(ppt_stream.getbuffer())
+
+        # LibreOffice를 이용한 무인 포맷 변환
+        cmd = [
+            "libreoffice",
+            "--headless",
+            "--convert-to",
+            "pptx",
+            input_ppt_path,
+            "--outdir",
+            tmpdir
+        ]
+        result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+
+        converted_pptx_path = os.path.join(tmpdir, "temp_source.pptx")
+        if os.path.exists(converted_pptx_path):
+            with open(converted_pptx_path, "rb") as f:
+                output_stream = io.BytesIO(f.read())
+            output_stream.seek(0)
+            return output_stream
+        else:
+            raise RuntimeError(f"PPT 변환에 실패했습니다: {result.stderr}")
+
+# 4. PPTX 병합 및 서식 유지 텍스트 치환
 def replace_shape_text(shape, old_text, new_text):
     if not shape.has_text_frame or not new_text:
         return
@@ -84,9 +115,9 @@ def append_presentation(target_prs, source_stream):
     for slide in src_prs.slides:
         duplicate_slide(target_prs, slide)
 
-# 4. 메인 입력 UI
+# 5. 메인 입력 UI
 st.title("⛪ 예배 PPT 자동 생성기")
-st.caption("찬양과 본문 정보를 입력하면 템플릿 서식을 유지하며 완성본을 만듭니다.")
+st.caption("구버전(.ppt)과 최신(.pptx) 찬양 파일 모두 자동으로 변환하여 병합합니다.")
 
 if "praises" not in st.session_state:
     st.session_state.praises = ["", ""]
@@ -153,7 +184,7 @@ if st.button("🚀 예배 PPT 생성 및 드라이브 저장", type="primary", u
         st.warning("⚠️ 성경 본문을 입력해 주세요.")
         st.stop()
 
-    with st.spinner("구글 드라이브에서 템플릿과 찬양 파일을 불러와 병합 중입니다..."):
+    with st.spinner("파일 변환 및 예배 PPT 병합 작업을 진행 중입니다..."):
         try:
             drive = get_drive_service()
             
@@ -167,15 +198,19 @@ if st.button("🚀 예배 PPT 생성 및 드라이브 저장", type="primary", u
             yymmdd = worship_date.strftime("%y%m%d")
             output_filename = f"{yymmdd}_{day_kor}_{preacher}.pptx"
 
+            # 1. 템플릿 파일 탐색
             template_kw = "_금_" if "금" in worship_type else ("_수_" if "수" in worship_type else "주일")
             t_meta = search_drive_file(drive, f_template, f"name contains '{template_kw}'")
             if not t_meta:
-                st.error(f"'{template_kw}' 키워드가 포함된 템플릿 PPTX를 찾을 수 없습니다.")
+                st.error(f"'{template_kw}' 키워드가 포함된 템플릿 파일을 찾을 수 없습니다.")
                 st.stop()
 
             prs_stream = download_file_stream(drive, t_meta['id'])
+            if t_meta['name'].endswith('.ppt'):
+                prs_stream = convert_ppt_to_pptx_stream(prs_stream)
             target_prs = Presentation(prs_stream)
 
+            # 2. 텍스트 치환
             for slide in target_prs.slides:
                 for shape in slide.shapes:
                     replace_shape_text(shape, "{성경본문}", scripture)
@@ -184,28 +219,48 @@ if st.button("🚀 예배 PPT 생성 및 드라이브 저장", type="primary", u
                     if reading_num:
                         replace_shape_text(shape, "{교독문}", f"교독문 {reading_num}번")
 
+            # 3. 찬양 파일 탐색 및 병합 (.ppt / .pptx 자동 분기)
             for p_val in st.session_state.praises:
                 if p_val.strip().isdigit():
                     prefix = f"{int(p_val.strip()):03d}. "
                     p_meta = search_drive_file(drive, f_praise, f"name starts with '{prefix}'")
+                    
                     if p_meta:
-                        st.write(f"✓ 찬양 추가됨: `{p_meta['name']}`")
+                        st.write(f"✓ 찬양 파일 로드: `{p_meta['name']}`")
                         p_stream = download_file_stream(drive, p_meta['id'])
+                        
+                        # 구버전 .ppt 파일인 경우 실시간 자동 변환 수행
+                        if p_meta['name'].endswith('.ppt'):
+                            st.caption(f"↳ 구버전 형식 감지: `{p_meta['name']}` 자동 변환 중...")
+                            p_stream = convert_ppt_to_pptx_stream(p_stream)
+
                         append_presentation(target_prs, p_stream)
                     else:
                         st.warning(f"⚠️ 찬양 {p_val}번 파일을 찾지 못해 건너뜁니다.")
 
+            # 4. 찬송가 파일 탐색 및 병합 (.ppt / .pptx 자동 분기)
             for h_val in st.session_state.hymns:
                 if h_val.strip().isdigit():
-                    exact_name = f"{int(h_val.strip()):03d}장.pptx"
-                    h_meta = search_drive_file(drive, f_hymn, f"name = '{exact_name}'")
+                    exact_name_pptx = f"{int(h_val.strip()):03d}장.pptx"
+                    exact_name_ppt = f"{int(h_val.strip()):03d}장.ppt"
+                    
+                    h_meta = search_drive_file(drive, f_hymn, f"name = '{exact_name_pptx}'")
+                    if not h_meta:
+                        h_meta = search_drive_file(drive, f_hymn, f"name = '{exact_name_ppt}'")
+
                     if h_meta:
-                        st.write(f"✓ 찬송가 추가됨: `{h_meta['name']}`")
+                        st.write(f"✓ 찬송가 파일 로드: `{h_meta['name']}`")
                         h_stream = download_file_stream(drive, h_meta['id'])
+                        
+                        if h_meta['name'].endswith('.ppt'):
+                            st.caption(f"↳ 구버전 형식 감지: `{h_meta['name']}` 자동 변환 중...")
+                            h_stream = convert_ppt_to_pptx_stream(h_stream)
+
                         append_presentation(target_prs, h_stream)
                     else:
                         st.warning(f"⚠️ 찬송가 {h_val}장 파일을 찾지 못해 건너뜁니다.")
 
+            # 5. 완성본 메모리 저장 및 드라이브 업로드
             out_stream = io.BytesIO()
             target_prs.save(out_stream)
             out_stream.seek(0)
